@@ -47,7 +47,7 @@
             this.ClientSize = new System.Drawing.Size(863, 521);
             this.Controls.Add(this.ReadBox);
             this.Name = "Form1";
-            this.Text = "TAP FUCKER";
+            this.Text = "TAP SANDBOX";
             this.ResumeLayout(false);
             this.PerformLayout();
 

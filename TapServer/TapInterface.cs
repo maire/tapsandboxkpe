@@ -13,7 +13,7 @@ using System.Windows.Forms;
 using Microsoft.Win32;
 using System.Runtime.InteropServices;
 
-namespace tapsandbox
+namespace TapServer
 {
     class TapInterface
     {
@@ -54,6 +54,7 @@ namespace tapsandbox
         object state;
         object state2;
         IAsyncResult res, res2;
+        public string devGuid;
 
         private Thread _readThread;
 
@@ -62,16 +63,14 @@ namespace tapsandbox
 
         private Queue<byte[]> writeQueue = new Queue<byte[]>();
 
-        public TapInterface(string devGuid, int localIP, int networkIP, int netmaskIP)
+        public TapInterface(int localIP, int networkIP, int netmaskIP)
         {
+            devGuid = GetDeviceGuid();
             ptr = CreateFile(UsermodeDeviceSpace + devGuid + ".tap", FileAccess.ReadWrite, FileShare.ReadWrite, 0, FileMode.Open, FILE_ATTRIBUTE_SYSTEM | FILE_FLAG_OVERLAPPED, IntPtr.Zero);
             pstatus = Marshal.AllocHGlobal(4);
             Marshal.WriteInt32(pstatus, 1);
             DeviceIoControl(ptr, TAP_CONTROL_CODE(6, METHOD_BUFFERED) /* TAP_IOCTL_SET_MEDIA_STATUS */, pstatus, 4, pstatus, 4, out len, IntPtr.Zero);
             ptun = Marshal.AllocHGlobal(12);
-            //Marshal.WriteInt32(ptun, 0, 0x0100030a); //local ip (10.3.0.1)
-            //Marshal.WriteInt32(ptun, 4, 0x0000030a); //network (10.3.0.0)
-            //Marshal.WriteInt32(ptun, 8, unchecked((int)0x00ffffff));//netmask (255.255.255.0)
             Marshal.WriteInt32(ptun, 0, localIP);
             Marshal.WriteInt32(ptun, 4, networkIP);
             Marshal.WriteInt32(ptun, 8, unchecked((int)(netmaskIP)));
@@ -88,6 +87,8 @@ namespace tapsandbox
             _readThread = new Thread(new ThreadStart(ReadThread));
             _readThread.Start();
         }
+
+
 
         public void ReadThread()
         {
@@ -123,18 +124,13 @@ namespace tapsandbox
         public static void ReadDataCallback(IAsyncResult asyncResult)
         {
             BytesRead = Tap.EndRead(asyncResult);
-            // Console.WriteLine("Read "+ BytesRead.ToString());
             WaitObject.Set();
         }
 
-        public void queueWrite(byte[] packet)
+        public void QueueWrite(byte[] packet)
         {
             writeQueue.Enqueue(packet);
         }
-
-        //
-        // Returns the device name from the Control panel based on GUID
-        //
 
 
         private static uint CTL_CODE(uint DeviceType, uint Function, uint Method, uint Access)
@@ -147,6 +143,35 @@ namespace tapsandbox
             return CTL_CODE(FILE_DEVICE_UNKNOWN, request, method, FILE_ANY_ACCESS);
         }
 
+        public string GetDeviceGuid()
+        {
+            const string AdapterKey = "SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E972-E325-11CE-BFC1-08002BE10318}";
+            RegistryKey regAdapters = Registry.LocalMachine.OpenSubKey(AdapterKey, false);
+            string[] keyNames = regAdapters.GetSubKeyNames();
+            string devGuid = "";
+            foreach (string x in keyNames)
+            {
+                if (x == "Properties")
+                    break;
+                RegistryKey regAdapter = regAdapters.OpenSubKey(x, false);
+                object id = regAdapter.GetValue("ComponentId");
+                if (id != null && id.ToString() == "tapstrong") devGuid = regAdapter.GetValue("NetCfgInstanceId").ToString();
+            }
+            return devGuid;
+        }
+
+        public string HumanName()
+        {
+            const string ConnectionKey = "SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}";
+            if (devGuid != "")
+            {
+                RegistryKey regConnection = Registry.LocalMachine.OpenSubKey(ConnectionKey + "\\" + devGuid + "\\Connection", false);
+                object id = regConnection.GetValue("Name");
+                if (id != null) return id.ToString();
+            }
+
+            return "";
+        }
 
     }
 }
